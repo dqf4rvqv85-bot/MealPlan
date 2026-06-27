@@ -1,4 +1,4 @@
-"""Aggregate plan ingredients into a consolidated shopping list."""
+"""Aggregate plan ingredients into a consolidated, buyable shopping list."""
 
 from collections import Counter
 from dataclasses import dataclass, field
@@ -6,23 +6,21 @@ from dataclasses import dataclass, field
 from sqlmodel import Session, select
 
 from app.models import Ingredient, MealPlan, MealPlanItem, Recipe
+from app.units import format_amount, group_for
 
 
 @dataclass
 class ShoppingLine:
     normalized_name: str
     display_name: str
-    unit: str | None
-    quantity: float | None  # None => "as needed" (no numeric quantities seen)
+    group_unit: str  # canonical bucket: 'g', 'ml', 'cup~', or a discrete unit
+    quantity: float | None  # in group_unit; None => "as needed"
+    approximate: bool = False  # quantity came from a density/volume estimate
     used_in: list[str] = field(default_factory=list)
 
     @property
     def quantity_display(self) -> str:
-        if self.quantity is None:
-            return "as needed"
-        q = round(self.quantity, 2)
-        q = int(q) if q == int(q) else q
-        return f"{q} {self.unit}".strip() if self.unit else str(q)
+        return format_amount(self.group_unit, self.quantity, self.approximate)
 
 
 def aggregate(session: Session, plan: MealPlan) -> list[ShoppingLine]:
@@ -30,10 +28,11 @@ def aggregate(session: Session, plan: MealPlan) -> list[ShoppingLine]:
         select(MealPlanItem).where(MealPlanItem.meal_plan_id == plan.id)
     ).all()
 
-    # group key -> accumulator
+    # key = (normalized_name, group_unit) -> accumulators
     qty: dict[tuple[str, str], float | None] = {}
     names: dict[tuple[str, str], Counter] = {}
     used: dict[tuple[str, str], set[str]] = {}
+    approx: dict[tuple[str, str], bool] = {}
 
     for item in items:
         recipe = session.get(Recipe, item.recipe_id)
@@ -44,25 +43,30 @@ def aggregate(session: Session, plan: MealPlan) -> list[ShoppingLine]:
             select(Ingredient).where(Ingredient.recipe_id == recipe.id)
         ).all()
         for ing in ingredients:
-            key = (ing.normalized_name, ing.unit or "")
+            group_unit, amount, is_approx = group_for(
+                ing.normalized_name, ing.quantity, ing.unit
+            )
+            key = (ing.normalized_name, group_unit)
             names.setdefault(key, Counter())[ing.name] += 1
             used.setdefault(key, set()).add(recipe.title)
-            if ing.quantity is not None:
-                scaled = ing.quantity * factor
+            approx[key] = approx.get(key, False) or is_approx
+            if amount is not None:
+                scaled = amount * factor
                 cur = qty.get(key)
-                qty[key] = scaled if cur is None else cur + scaled
+                qty[key] = scaled if cur is None else (cur or 0.0) + scaled
             else:
                 qty.setdefault(key, None)
 
     lines: list[ShoppingLine] = []
-    for (norm, unit), name_counter in names.items():
+    for (norm, group_unit), name_counter in names.items():
         lines.append(
             ShoppingLine(
                 normalized_name=norm,
                 display_name=name_counter.most_common(1)[0][0],
-                unit=unit or None,
-                quantity=qty.get((norm, unit)),
-                used_in=sorted(used[(norm, unit)]),
+                group_unit=group_unit,
+                quantity=qty.get((norm, group_unit)),
+                approximate=approx[(norm, group_unit)],
+                used_in=sorted(used[(norm, group_unit)]),
             )
         )
     lines.sort(key=lambda x: x.display_name.lower())

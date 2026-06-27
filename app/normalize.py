@@ -19,6 +19,31 @@ _NON_WORD = re.compile(r"[^a-z0-9\s]")
 # Everything from the first comma or '(' onward is prep detail, not the item.
 _AFTER_DETAIL = re.compile(r"[,(].*$", re.S)
 
+# Words ending in 's' that are already singular — never strip their 's'.
+_UNCOUNTABLE = {
+    "hummus", "molasses", "couscous", "asparagus", "watercress", "cos",
+    "swiss", "houmous",
+}
+
+
+def _singularize(word: str) -> str:
+    """Best-effort singular of one token, so 'bananas' keys with 'banana'.
+
+    Only used to build the merge key; the human-facing display name keeps the
+    ingredient's original wording, so an odd key (e.g. 'oat') is harmless.
+    """
+    if word in _UNCOUNTABLE or len(word) <= 3:
+        return word
+    if word.endswith("ies"):
+        return word[:-3] + "y"  # berries -> berry
+    if word.endswith("oes"):
+        return word[:-2]  # tomatoes -> tomato
+    if word.endswith(("ss", "us", "is", "os")):
+        return word  # glass, hummus, basis
+    if word.endswith("s"):
+        return word[:-1]  # bananas -> banana, lentils -> lentil
+    return word
+
 
 def normalize_title(title: str) -> str:
     """Canonical key for de-duplicating recipes across overlapping batches."""
@@ -38,4 +63,6 @@ def normalize_name(name: str) -> str:
         t for t in text.split()
         if t and not t.isdigit() and t not in _DESCRIPTORS
     ]
+    if tokens:
+        tokens[-1] = _singularize(tokens[-1])  # singularize the head noun
     return " ".join(tokens).strip() or name.strip().lower()

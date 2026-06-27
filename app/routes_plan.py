@@ -79,10 +79,11 @@ def shopping_csv(session: Session = Depends(get_session)):
     lines = aggregate(session, plan) if plan else []
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["item", "quantity", "unit", "used_in"])
+    writer.writerow(["item", "quantity", "used_in"])
     for line in lines:
-        qty = "" if line.quantity is None else round(line.quantity, 2)
-        writer.writerow([line.display_name, qty, line.unit or "", "; ".join(line.used_in)])
+        writer.writerow(
+            [line.display_name, line.quantity_display, "; ".join(line.used_in)]
+        )
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
