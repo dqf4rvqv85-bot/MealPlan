@@ -18,6 +18,7 @@ settings.tesco_storage_state; subsequent search/add runs reuse it headlessly.
 import glob
 import os
 import re
+import time
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
@@ -198,13 +199,22 @@ def add_to_basket(
     return out
 
 
-def save_login(headless: bool = False) -> None:
+def _looks_logged_in(page: Page) -> bool:
+    """Heuristic: a 'sign out' affordance only appears once authenticated."""
+    try:
+        return page.get_by_text(re.compile(r"sign out|log out", re.I)).count() > 0
+    except Exception:
+        return False
+
+
+def save_login(headless: bool = False, timeout_s: int = 300) -> None:
     """One-time interactive login helper.
 
     Opens a visible browser at the Tesco login page, pre-fills the credentials
-    from .env if present, then waits for you to finish signing in (clearing any
-    CAPTCHA / 2FA) before persisting the session. Pausing for confirmation —
-    rather than auto-submitting — is what makes this survive Tesco's protections.
+    from .env if present, then *auto-detects* when you've finished signing in
+    (clearing any CAPTCHA / 2FA) and persists the session — no terminal input
+    needed, so it works even when stdin isn't interactive. Auto-detecting rather
+    than auto-submitting is what makes this survive Tesco's protections.
     """
     with TescoSession(headless=headless) as s:
         s.page.goto(LOGIN_URL, wait_until="domcontentloaded")
@@ -219,7 +229,25 @@ def save_login(headless: bool = False) -> None:
                     pass  # field not present / different markup — fill manually
         print("\nA browser window has opened at the Tesco sign-in page.")
         print("Finish signing in there — complete any CAPTCHA or 2FA — until you")
-        print("can see your Tesco account/groceries homepage.")
-        input("Then press Enter HERE to save the session... ")
+        print("reach your Tesco groceries homepage. I'll detect it automatically")
+        print(f"(waiting up to {timeout_s}s) and save the session.")
+
+        deadline = time.monotonic() + timeout_s
+        detected = False
+        try:
+            while time.monotonic() < deadline:
+                if _looks_logged_in(s.page):
+                    detected = True
+                    break
+                s.page.wait_for_timeout(2000)  # pumps the browser event loop
+        except Exception:
+            # browser closed or navigation in flight — fall through and save what we can
+            pass
+
         s.save_state()
-        print(f"Saved session to {settings.resolve(settings.tesco_storage_state)}")
+        if detected:
+            print("✓ Detected a signed-in session — saved.")
+        else:
+            print("⚠ Didn't detect sign-in before timeout; saved the current session")
+            print("  anyway. If Tesco search later fails, just re-run this command.")
+        print(f"Session file: {settings.resolve(settings.tesco_storage_state)}")
