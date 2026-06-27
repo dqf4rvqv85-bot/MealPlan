@@ -1,0 +1,13 @@
+<tr class="{% if line.in_pantry %}have{% endif %}">
+  <td class="item">{{ line.display_name }}</td>
+  <td>{{ line.quantity_display }}</td>
+  <td class="muted" style="font-size:.82rem">{{ line.used_in|join(', ') }}</td>
+  <td style="text-align:right">
+    <button type="button"
+            class="{{ '' if line.in_pantry else 'secondary' }}"
+            hx-post="/pantry/toggle" hx-target="closest tr" hx-swap="outerHTML"
+            hx-vals='{"normalized_name": {{ line.normalized_name|tojson }}, "group_unit": {{ line.group_unit|tojson }}, "present": "{{ 'false' if line.in_pantry else 'true' }}"}'>
+      {% if line.in_pantry %}&#10003; Have it{% else %}Have it{% endif %}
+    </button>
+  </td>
+</tr>

@@ -4,55 +4,24 @@
   <p><a href="/plan">&larr; Meal plan</a></p>
   <h1>Shopping list</h1>
 
-  {% if plan and (buy or pantry) %}
+  {% if plan and lines %}
     <p class="muted">
-      {{ buy|length }} to buy &middot; {{ pantry|length }} already in your pantry &middot;
-      aggregated across {{ plan.name }}.
+      <span id="buy-count">{{ n_buy }}</span> to buy &middot;
+      {{ n_have }} marked &ldquo;have it&rdquo; &middot; across {{ plan.name }}.
     </p>
     <p>
       <a class="btn secondary" href="/plan/shopping.csv">Download CSV</a>
       <a class="btn" href="/tesco/match">Match &amp; add at Tesco &rarr;</a>
     </p>
+    <p class="muted" style="font-size:.85rem">
+      Tick <strong>Have it</strong> for anything already in your cupboard — the row
+      stays here (dimmed) and is left out of the shop, CSV and Tesco.
+    </p>
 
-    <h2>Need to buy ({{ buy|length }})</h2>
     <table>
       <thead><tr><th>Item</th><th>Quantity</th><th>Used in</th><th></th></tr></thead>
       <tbody>
-        {% for line in buy %}
-          <tr>
-            <td>{{ line.display_name }}</td>
-            <td>{{ line.quantity_display }}</td>
-            <td class="muted" style="font-size:.85rem">{{ line.used_in|join(', ') }}</td>
-            <td>
-              <form method="post" action="/pantry/toggle" style="display:inline">
-                <input type="hidden" name="normalized_name" value="{{ line.normalized_name }}">
-                <input type="hidden" name="present" value="true">
-                <button class="secondary" type="submit" title="I already have this">Have it</button>
-              </form>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    <h2 style="margin-top:1.5rem">Already have — pantry ({{ pantry|length }})</h2>
-    <p class="muted" style="margin-top:0">
-      Staples skipped from the shop. Out of one? Click <em>Need it</em> to add it back.
-    </p>
-    <table>
-      <tbody>
-        {% for line in pantry %}
-          <tr>
-            <td>{{ line.display_name }}</td>
-            <td>
-              <form method="post" action="/pantry/toggle" style="display:inline">
-                <input type="hidden" name="normalized_name" value="{{ line.normalized_name }}">
-                <input type="hidden" name="present" value="false">
-                <button class="secondary" type="submit" title="Add this to the shop">Need it</button>
-              </form>
-            </td>
-          </tr>
-        {% endfor %}
+        {% for line in lines %}{% include "_shop_row.html" %}{% endfor %}
       </tbody>
     </table>
   {% else %}

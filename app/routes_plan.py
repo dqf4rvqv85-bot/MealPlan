@@ -82,21 +82,32 @@ def remove(item_id: int, session: Session = Depends(get_session)):
 def shopping(request: Request, session: Session = Depends(get_session)):
     plan = current_plan(session)
     lines = aggregate(session, plan) if plan else []
-    buy = [l for l in lines if not l.in_pantry]
-    pantry = [l for l in lines if l.in_pantry]
+    n_have = sum(1 for l in lines if l.in_pantry)
     return templates.TemplateResponse(
-        request, "shopping.html", {"plan": plan, "buy": buy, "pantry": pantry}
+        request, "shopping.html",
+        {"plan": plan, "lines": lines, "n_buy": len(lines) - n_have, "n_have": n_have},
     )
 
 
-@router.post("/pantry/toggle")
+@router.post("/pantry/toggle", response_class=HTMLResponse)
 def pantry_toggle(
+    request: Request,
     normalized_name: str = Form(...),
+    group_unit: str = Form(""),
     present: bool = Form(False),
     session: Session = Depends(get_session),
 ):
     set_in_pantry(session, normalized_name, present)
-    return RedirectResponse(url="/plan/shopping", status_code=303)
+    plan = current_plan(session)
+    lines = aggregate(session, plan) if plan else []
+    line = next(
+        (l for l in lines
+         if l.normalized_name == normalized_name and l.group_unit == group_unit),
+        None,
+    )
+    if line is None:
+        return HTMLResponse("")
+    return templates.TemplateResponse(request, "_shop_row.html", {"line": line})
 
 
 @router.get("/plan/shopping.csv")
