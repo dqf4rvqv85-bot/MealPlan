@@ -199,6 +199,27 @@ def add_to_basket(
 
 
 def save_login(headless: bool = False) -> None:
-    """One-time interactive login helper (run headed to clear CAPTCHA/2FA)."""
+    """One-time interactive login helper.
+
+    Opens a visible browser at the Tesco login page, pre-fills the credentials
+    from .env if present, then waits for you to finish signing in (clearing any
+    CAPTCHA / 2FA) before persisting the session. Pausing for confirmation —
+    rather than auto-submitting — is what makes this survive Tesco's protections.
+    """
     with TescoSession(headless=headless) as s:
-        s.login()
+        s.page.goto(LOGIN_URL, wait_until="domcontentloaded")
+        if settings.tesco_email and settings.tesco_password:
+            for sel, val in (
+                ('input[type="email"], #email', settings.tesco_email),
+                ('input[type="password"], #password', settings.tesco_password),
+            ):
+                try:
+                    s.page.fill(sel, val, timeout=4000)
+                except Exception:
+                    pass  # field not present / different markup — fill manually
+        print("\nA browser window has opened at the Tesco sign-in page.")
+        print("Finish signing in there — complete any CAPTCHA or 2FA — until you")
+        print("can see your Tesco account/groceries homepage.")
+        input("Then press Enter HERE to save the session... ")
+        s.save_state()
+        print(f"Saved session to {settings.resolve(settings.tesco_storage_state)}")
