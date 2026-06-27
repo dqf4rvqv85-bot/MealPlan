@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from sqlmodel import Session, select
 
 from app.models import Ingredient, MealPlan, MealPlanItem, Recipe
+from app.planning.pantry import ensure_seeded, get_pantry
 from app.units import format_amount, group_for
 
 
@@ -16,6 +17,7 @@ class ShoppingLine:
     group_unit: str  # canonical bucket: 'g', 'ml', 'cup~', or a discrete unit
     quantity: float | None  # in group_unit; None => "as needed"
     approximate: bool = False  # quantity came from a density/volume estimate
+    in_pantry: bool = False  # user already keeps this stocked
     used_in: list[str] = field(default_factory=list)
 
     @property
@@ -24,6 +26,8 @@ class ShoppingLine:
 
 
 def aggregate(session: Session, plan: MealPlan) -> list[ShoppingLine]:
+    ensure_seeded(session)
+    pantry = get_pantry(session)
     items = session.exec(
         select(MealPlanItem).where(MealPlanItem.meal_plan_id == plan.id)
     ).all()
@@ -66,6 +70,7 @@ def aggregate(session: Session, plan: MealPlan) -> list[ShoppingLine]:
                 group_unit=group_unit,
                 quantity=qty.get((norm, group_unit)),
                 approximate=approx[(norm, group_unit)],
+                in_pantry=norm in pantry,
                 used_in=sorted(used[(norm, group_unit)]),
             )
         )

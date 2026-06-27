@@ -20,6 +20,7 @@ def _matches_by_name(session: Session) -> dict[str, TescoMatch]:
 def _review_context(session: Session, request: Request, **extra) -> dict:
     plan = current_plan(session)
     lines = aggregate(session, plan) if plan else []
+    lines = [l for l in lines if not l.in_pantry]  # skip staples you already have
     matches = _matches_by_name(session)
     rows = []
     for i, line in enumerate(lines):

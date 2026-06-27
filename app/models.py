@@ -58,6 +58,13 @@ class MealPlanItem(SQLModel, table=True):
     plan: Optional[MealPlan] = Relationship(back_populates="items")
 
 
+class PantryItem(SQLModel, table=True):
+    """An ingredient the user keeps stocked — excluded from the shopping list."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    normalized_name: str = Field(index=True, unique=True)
+
+
 class TescoMatch(SQLModel, table=True):
     """Cache of confirmed ingredient -> Tesco product mappings."""
 

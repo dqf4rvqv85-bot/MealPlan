@@ -14,6 +14,8 @@ Densities are approximate and only cover common staples; conversions derived
 from them are flagged approximate so the UI can mark them.
 """
 
+import math
+
 # millilitres per US volume unit
 _VOLUME_ML = {
     "tsp": 5.0, "teaspoon": 5.0, "teaspoons": 5.0,
@@ -113,5 +115,6 @@ def format_amount(group_unit: str, quantity: float | None, approximate: bool) ->
             return f"{pre}{_num(quantity / 15)} tbsp"
         return f"{pre}{_num(quantity / 5)} tsp"
 
-    # discrete unit
-    return f"{_num(quantity)} {group_unit}".strip()
+    # discrete units and bare counts: round UP — you buy whole items/packs
+    whole = math.ceil(quantity - 1e-9)
+    return f"{whole} {group_unit}".strip()

@@ -14,6 +14,7 @@ from app.planning.generate import (
     set_servings,
     swap_item,
 )
+from app.planning.pantry import set_in_pantry
 from app.planning.shopping import aggregate
 from app.templating import templates
 
@@ -68,9 +69,21 @@ def remove(item_id: int, session: Session = Depends(get_session)):
 def shopping(request: Request, session: Session = Depends(get_session)):
     plan = current_plan(session)
     lines = aggregate(session, plan) if plan else []
+    buy = [l for l in lines if not l.in_pantry]
+    pantry = [l for l in lines if l.in_pantry]
     return templates.TemplateResponse(
-        request, "shopping.html", {"plan": plan, "lines": lines}
+        request, "shopping.html", {"plan": plan, "buy": buy, "pantry": pantry}
     )
+
+
+@router.post("/pantry/toggle")
+def pantry_toggle(
+    normalized_name: str = Form(...),
+    present: bool = Form(False),
+    session: Session = Depends(get_session),
+):
+    set_in_pantry(session, normalized_name, present)
+    return RedirectResponse(url="/plan/shopping", status_code=303)
 
 
 @router.get("/plan/shopping.csv")
@@ -81,6 +94,8 @@ def shopping_csv(session: Session = Depends(get_session)):
     writer = csv.writer(buf)
     writer.writerow(["item", "quantity", "used_in"])
     for line in lines:
+        if line.in_pantry:
+            continue  # already stocked — not part of the shop
         writer.writerow(
             [line.display_name, line.quantity_display, "; ".join(line.used_in)]
         )
