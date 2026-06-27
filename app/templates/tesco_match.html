@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Match to Tesco — Mealplanner{% endblock %}
+{% block body %}
+  <p><a href="/plan/shopping">&larr; Shopping list</a></p>
+  <h1>Match to Tesco products</h1>
+
+  {% if error %}
+    <div class="card" style="border-color:#c62828;color:#c62828">{{ error }}</div>
+  {% endif %}
+
+  {% if results %}
+    <div class="card">
+      <strong>{{ "Dry run — nothing was added." if was_dry_run else "Basket update" }}</strong>
+      <table style="margin-top:.4rem">
+        <tbody>
+          {% for r in results %}
+            <tr><td>{{ r.title }}</td>
+                <td>{{ "✓ " if r.ok else "✗ " }}{{ r.detail }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if not rows %}
+    <p class="muted">No shopping list yet — <a href="/plan">generate a meal plan</a> first.</p>
+  {% elif not have_candidates %}
+    <div class="card">
+      <p>No Tesco candidates cached yet. Start your debug Chrome and sign in, then run:</p>
+      <pre>cd ~/mealplanner &amp;&amp; .venv/bin/python -m scripts.tesco_match</pre>
+      <p class="muted">That searches each item (applying dairy/egg substitutions) and
+      caches the options to choose from here. Refresh when it finishes.</p>
+    </div>
+    <p><a class="btn secondary" href="/tesco/review">Manual checklist instead &rarr;</a></p>
+  {% else %}
+    <p class="muted">
+      Pick the right Tesco product for each item ({{ n_confirmed }}/{{ rows|length }}
+      confirmed). Recipe dairy/egg substitutes are searched as their conventional
+      version (shown as <em>as "…"</em>). Choices are cached for next week. The add
+      step puts <strong>1 of each</strong> in your basket — adjust quantities and
+      check out in Tesco yourself. Nothing here checks out.
+    </p>
+    <p>
+      <a class="btn secondary" href="/plan/shopping.csv">Download CSV</a>
+      <a class="btn secondary" href="/tesco/review">Manual checklist</a>
+    </p>
+
+    <form method="post" action="/tesco/match/confirm">
+      {% for row in rows %}
+        {% set sel = row.confirmed.tesco_product_id if row.confirmed
+                     else (row.candidates[0].product_id if row.candidates else '') %}
+        <div class="card" style="margin:.5rem 0">
+          <div>
+            <strong>{{ row.line.display_name }}</strong>
+            <span class="muted">— need {{ row.line.quantity_display }}</span>
+            {% if row.substituted %}<span class="pill">as "{{ row.search_term }}"</span>{% endif %}
+            {% if row.confirmed %}<span class="pill">✓ confirmed</span>{% endif %}
+          </div>
+          <div style="margin-top:.3rem">
+            {% for cand in row.candidates %}
+              <label style="display:block">
+                <input type="radio" name="pick::{{ row.line.normalized_name }}"
+                       value="{{ cand.product_id }}"
+                       {% if cand.product_id == sel %}checked{% endif %}>
+                {{ cand.title or "(product)" }}
+                {% if cand.price %}<span class="muted">— {{ cand.price }}</span>{% endif %}
+              </label>
+            {% else %}
+              <span class="muted">No results found.</span>
+            {% endfor %}
+            <label style="display:block">
+              <input type="radio" name="pick::{{ row.line.normalized_name }}"
+                     value="" {% if not sel %}checked{% endif %}>
+              Skip / none
+              — <a href="{{ row.search_link }}" target="_blank" rel="noopener">search on Tesco &#8599;</a>
+            </label>
+          </div>
+        </div>
+      {% endfor %}
+      <p><button type="submit">Save matches</button></p>
+    </form>
+
+    <form method="post" action="/tesco/add" class="card">
+      <strong>Add confirmed matches to your basket</strong>
+      <p class="muted" style="margin:.3rem 0">
+        Uses your debug Chrome. Adds 1 of each confirmed item. Never checks out.
+      </p>
+      <label><input type="checkbox" name="dry_run" checked> Dry run (don't actually add)</label>
+      <button type="submit" style="margin-left:1rem">Add {{ n_confirmed }} to basket</button>
+    </form>
+  {% endif %}
+{% endblock %}

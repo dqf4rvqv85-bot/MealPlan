@@ -4,105 +4,157 @@ from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
 from app.db import get_session
-from app.models import TescoMatch
+from app.models import ProductCandidate, TescoMatch
 from app.planning.generate import current_plan
 from app.planning.shopping import aggregate
-from app.tesco.basket import add_to_basket, search_terms, search_url
+from app.tesco.basket import TescoConnectError, TescoSession, search_url
+from app.tesco.substitutions import to_search_term
 from app.templating import templates
 
 router = APIRouter()
 
 
-def _matches_by_name(session: Session) -> dict[str, TescoMatch]:
-    return {m.normalized_name: m for m in session.exec(select(TescoMatch)).all()}
+def _confirmed_matches(session: Session) -> dict[str, TescoMatch]:
+    return {
+        m.normalized_name: m
+        for m in session.exec(
+            select(TescoMatch).where(TescoMatch.verified == True)  # noqa: E712
+        ).all()
+    }
 
 
-def _review_context(session: Session, request: Request, **extra) -> dict:
+def _buy_lines(session: Session):
     plan = current_plan(session)
     lines = aggregate(session, plan) if plan else []
-    lines = [l for l in lines if not l.in_pantry]  # skip staples you already have
-    matches = _matches_by_name(session)
+    return plan, [l for l in lines if not l.in_pantry]
+
+
+def _match_context(session: Session, request: Request, **extra) -> dict:
+    plan, lines = _buy_lines(session)
+    confirmed = _confirmed_matches(session)
     rows = []
-    for i, line in enumerate(lines):
+    for line in lines:
+        cands = session.exec(
+            select(ProductCandidate)
+            .where(ProductCandidate.normalized_name == line.normalized_name)
+            .order_by(ProductCandidate.rank)
+        ).all()
+        term = to_search_term(line.normalized_name)
         rows.append(
             {
-                "i": i,
                 "line": line,
-                "match": matches.get(line.normalized_name),
-                "search_link": search_url(line.display_name),
+                "candidates": cands,
+                "confirmed": confirmed.get(line.normalized_name),
+                "search_term": term,
+                "search_link": search_url(term),
+                "substituted": term != line.normalized_name,
             }
         )
-    return {"request": request, "plan": plan, "rows": rows, **extra}
+    have_candidates = any(r["candidates"] for r in rows)
+    return {
+        "request": request,
+        "plan": plan,
+        "rows": rows,
+        "n_confirmed": sum(1 for r in rows if r["confirmed"]),
+        "have_candidates": have_candidates,
+        **extra,
+    }
+
+
+@router.get("/tesco/match", response_class=HTMLResponse)
+def match(request: Request, session: Session = Depends(get_session)):
+    return templates.TemplateResponse(
+        request, "tesco_match.html", _match_context(session, request)
+    )
 
 
 @router.get("/tesco/review", response_class=HTMLResponse)
 def review(request: Request, session: Session = Depends(get_session)):
+    """Manual fallback: a checklist with per-item Tesco search links."""
+    _, lines = _buy_lines(session)
+    plan = current_plan(session)
+    rows = [{"line": l, "search_link": search_url(to_search_term(l.normalized_name))}
+            for l in lines]
     return templates.TemplateResponse(
-        request, "tesco_review.html", _review_context(session, request)
+        request, "tesco_review.html", {"request": request, "plan": plan, "rows": rows}
     )
 
 
-@router.post("/tesco/search")
-async def search(request: Request, session: Session = Depends(get_session)):
-    plan = current_plan(session)
-    if plan is None:
-        return RedirectResponse(url="/plan", status_code=303)
-    lines = aggregate(session, plan)
-    existing = _matches_by_name(session)
-    # only search items we don't already have a cached match for
-    todo = [l for l in lines if l.normalized_name not in existing]
-    error = None
-    try:
-        results = await run_in_threadpool(
-            search_terms, [l.display_name for l in todo]
-        )
-        for line, res in zip(todo, results):
-            session.add(
-                TescoMatch(
-                    normalized_name=line.normalized_name,
-                    search_term=line.display_name,
-                    tesco_product_id=res.product_id,
-                    product_url=res.url,
-                    product_title=res.title,
-                    pack_note=res.price,
-                    verified=res.found,
-                )
+@router.post("/tesco/match/confirm")
+async def confirm(request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    for key, value in form.multi_items():
+        if not key.startswith("pick::"):
+            continue
+        name = key[len("pick::"):]
+        existing = session.exec(
+            select(TescoMatch).where(TescoMatch.normalized_name == name)
+        ).first()
+        if not value:  # "skip" — drop any existing match
+            if existing:
+                session.delete(existing)
+            continue
+        cand = session.exec(
+            select(ProductCandidate).where(
+                ProductCandidate.normalized_name == name,
+                ProductCandidate.product_id == value,
             )
-        session.commit()
-    except Exception as exc:  # browser/site/login failure — surface it
-        error = f"Tesco search failed: {exc}"
-
-    ctx = _review_context(session, request, error=error)
-    return templates.TemplateResponse(request, "tesco_review.html", ctx)
+        ).first()
+        term = to_search_term(name)
+        match = existing or TescoMatch(normalized_name=name)
+        match.search_term = term
+        match.tesco_product_id = value
+        match.product_url = cand.url if cand else None
+        match.product_title = cand.title if cand else None
+        match.pack_note = cand.price if cand else None
+        match.verified = True
+        session.add(match)
+    session.commit()
+    return RedirectResponse(url="/tesco/match", status_code=303)
 
 
 @router.post("/tesco/add")
 async def add(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
     dry_run = form.get("dry_run") == "on"
-    included = form.getlist("include")  # list of row indices as strings
-
-    items: list[tuple[str, str, int]] = []
-    for idx in included:
-        url = form.get(f"url_{idx}")
-        term = form.get(f"term_{idx}") or ""
-        if not url:
-            continue
-        try:
-            qty = max(1, int(form.get(f"qty_{idx}", "1")))
-        except ValueError:
-            qty = 1
-        items.append((term, url, qty))
+    _, lines = _buy_lines(session)
+    names = {l.normalized_name for l in lines}
+    matches = [
+        m
+        for m in _confirmed_matches(session).values()
+        if m.normalized_name in names and m.tesco_product_id
+    ]
 
     error = None
     results = []
-    if not items:
-        error = "No matched items selected."
+    if not matches:
+        error = "No confirmed matches to add — pick products and Save first."
+    elif dry_run:
+        results = [
+            {"title": m.product_title or m.normalized_name, "ok": True,
+             "detail": "dry-run (not added)"}
+            for m in matches
+        ]
     else:
+        def _run():
+            out = []
+            with TescoSession() as s:
+                for m in matches:
+                    ok, detail = s.add_chosen(
+                        m.search_term or to_search_term(m.normalized_name),
+                        m.tesco_product_id, 1,
+                    )
+                    out.append({"title": m.product_title or m.normalized_name,
+                                "ok": ok, "detail": detail})
+            return out
+
         try:
-            results = await run_in_threadpool(add_to_basket, items, dry_run)
-        except Exception as exc:
+            results = await run_in_threadpool(_run)
+        except TescoConnectError as exc:
+            error = str(exc)
+        except Exception as exc:  # pragma: no cover - live site failure
             error = f"Tesco basket update failed: {exc}"
 
-    ctx = _review_context(session, request, error=error, results=results, was_dry_run=dry_run)
-    return templates.TemplateResponse(request, "tesco_review.html", ctx)
+    ctx = _match_context(session, request, error=error, results=results,
+                         was_dry_run=dry_run)
+    return templates.TemplateResponse(request, "tesco_match.html", ctx)
