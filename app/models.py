@@ -65,6 +65,18 @@ class PantryItem(SQLModel, table=True):
     normalized_name: str = Field(index=True, unique=True)
 
 
+class ProductCandidate(SQLModel, table=True):
+    """A Tesco search result offered for an ingredient (top-N, for the confirm UI)."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    normalized_name: str = Field(index=True)
+    rank: int = 0
+    product_id: Optional[str] = None
+    title: Optional[str] = None
+    url: Optional[str] = None
+    price: Optional[str] = None
+
+
 class TescoMatch(SQLModel, table=True):
     """Cache of confirmed ingredient -> Tesco product mappings."""
 

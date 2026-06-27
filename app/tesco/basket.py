@@ -97,38 +97,56 @@ class TescoSession:
             if self._pw:
                 self._pw.stop()
 
-    def _top_tile(self, term: str):
+    def _goto_search(self, term: str) -> None:
         self.page.goto(search_url(term), wait_until="domcontentloaded", timeout=30000)
-        self.page.wait_for_timeout(2500)
-        tile = self.page.locator(PRODUCT_TILE).first
-        return tile if tile.count() > 0 else None
+        self.page.wait_for_timeout(2200)
+
+    def _tile_to_match(self, tile, term: str) -> ProductMatch:
+        pid = tile.get_attribute("data-testid")
+        links = tile.locator(PRODUCT_LINK)
+        title = None
+        for i in range(min(links.count(), 4)):
+            txt = (links.nth(i).inner_text() or "").strip()
+            if txt:
+                title = txt
+                break
+        href = links.first.get_attribute("href") or ""
+        url = href if href.startswith("http") else f"https://www.tesco.com{href}"
+        pm = _PRICE_RE.search(tile.inner_text() or "")
+        return ProductMatch(
+            term=term, found=True, title=title, url=url,
+            product_id=pid, price=pm.group(0) if pm else None,
+        )
 
     def search(self, term: str) -> ProductMatch:
         try:
-            tile = self._top_tile(term)
-            if tile is None:
+            self._goto_search(term)
+            tile = self.page.locator(PRODUCT_TILE).first
+            if tile.count() == 0:
                 return ProductMatch(term=term, found=False)
-            pid = tile.get_attribute("data-testid")
-            links = tile.locator(PRODUCT_LINK)
-            title = None
-            for i in range(min(links.count(), 4)):
-                txt = (links.nth(i).inner_text() or "").strip()
-                if txt:
-                    title = txt
-                    break
-            href = links.first.get_attribute("href") or ""
-            url = href if href.startswith("http") else f"https://www.tesco.com{href}"
-            pm = _PRICE_RE.search(tile.inner_text() or "")
-            return ProductMatch(
-                term=term,
-                found=True,
-                title=title,
-                url=url,
-                product_id=pid,
-                price=pm.group(0) if pm else None,
-            )
+            return self._tile_to_match(tile, term)
         except Exception:  # fragile site — degrade, don't crash
             return ProductMatch(term=term, found=False)
+
+    def candidates(self, term: str, n: int = 5) -> list[ProductMatch]:
+        """Top `n` distinct product results for a search term (for confirm UI)."""
+        try:
+            self._goto_search(term)
+            tiles = self.page.locator(PRODUCT_TILE)
+            out: list[ProductMatch] = []
+            seen: set[str] = set()
+            for i in range(min(tiles.count(), n * 3)):
+                tile = tiles.nth(i)
+                pid = tile.get_attribute("data-testid")
+                if not pid or pid in seen:
+                    continue
+                seen.add(pid)
+                out.append(self._tile_to_match(tile, term))
+                if len(out) >= n:
+                    break
+            return out
+        except Exception:
+            return []
 
     def add_top_result(self, term: str, quantity: int) -> tuple[bool, str]:
         """Add the top search result to the basket `quantity` times.
@@ -137,8 +155,9 @@ class TescoSession:
         quantity stepper that appears for any extra units. Never checks out.
         """
         try:
-            tile = self._top_tile(term)
-            if tile is None:
+            self._goto_search(term)
+            tile = self.page.locator(PRODUCT_TILE).first
+            if tile.count() == 0:
                 return False, "no product found"
             add_btn = tile.get_by_role("button", name=ADD_BUTTON_RE).first
             if add_btn.count() == 0:
