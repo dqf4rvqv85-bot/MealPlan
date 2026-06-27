@@ -1,81 +1,78 @@
 {% extends "base.html" %}
-{% block title %}Send to Tesco — Mealplanner{% endblock %}
+{% block title %}Shop at Tesco — Mealplanner{% endblock %}
 {% block body %}
   <p><a href="/plan/shopping">&larr; Shopping list</a></p>
-  <h1>Send to Tesco</h1>
-
-  {% if error %}
-    <div class="card" style="border-color:#c62828;color:#c62828">{{ error }}</div>
-  {% endif %}
-
-  {% if results %}
-    <div class="card">
-      <strong>{{ "Dry run — nothing was added." if was_dry_run else "Basket update results" }}</strong>
-      <table style="margin-top:.5rem">
-        <thead><tr><th>Item</th><th>Qty</th><th>Result</th></tr></thead>
-        <tbody>
-          {% for r in results %}
-            <tr><td>{{ r.term }}</td><td>{{ r.quantity }}</td>
-                <td>{{ "✓ " if r.ok else "✗ " }}{{ r.detail }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% endif %}
+  <h1>Shop at Tesco</h1>
 
   {% if not rows %}
     <p class="muted">No shopping list yet — <a href="/plan">generate a meal plan</a> first.</p>
   {% else %}
-    <p class="muted">
-      Product matches come from a Tesco search and are cached. Pack quantities are
-      your call — recipe amounts (g/ml/tbsp) don't map 1:1 to pack sizes, so the
-      default is 1 pack each; adjust below and confirm in the Tesco basket. This
-      never proceeds to checkout.
-    </p>
-
-    <form method="post" action="/tesco/search" style="margin:.6rem 0">
-      <button type="submit">Search Tesco for matches</button>
-      <span class="muted">(needs a logged-in session — see README)</span>
-    </form>
-
-    <form method="post" action="/tesco/add">
-      <table>
-        <thead>
-          <tr><th></th><th>Item</th><th>Needed</th><th>Tesco match</th><th>Packs</th></tr>
-        </thead>
-        <tbody>
-          {% for row in rows %}
-            <tr>
-              <td>
-                {% if row.match and row.match.product_url %}
-                  <input type="checkbox" name="include" value="{{ row.i }}" checked>
-                  <input type="hidden" name="url_{{ row.i }}" value="{{ row.match.product_url }}">
-                  <input type="hidden" name="term_{{ row.i }}" value="{{ row.line.display_name }}">
-                {% endif %}
-              </td>
-              <td>{{ row.line.display_name }}</td>
-              <td class="muted">{{ row.line.quantity_display }}</td>
-              <td>
-                {% if row.match and row.match.product_url %}
-                  <a href="{{ row.match.product_url }}" target="_blank">{{ row.match.product_title or "product" }}</a>
-                  {% if row.match.pack_note %}<span class="muted">{{ row.match.pack_note }}</span>{% endif %}
-                {% else %}
-                  <a href="{{ row.search_link }}" target="_blank">search on Tesco</a>
-                {% endif %}
-              </td>
-              <td>
-                {% if row.match and row.match.product_url %}
-                  <input type="number" name="qty_{{ row.i }}" min="1" value="1">
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <p style="margin-top:1rem">
-        <label><input type="checkbox" name="dry_run" checked> Dry run (don't actually add)</label>
-        <button type="submit" style="margin-left:1rem">Add selected to basket</button>
+    <div class="card">
+      <p style="margin:.2rem 0">
+        Tesco blocks automated ordering, so this is a fast assisted checklist.
+        Click <strong>Search&nbsp;&#8599;</strong> on a row to open that item in your
+        normal browser (where you're logged in), add it to your Tesco basket, then
+        tick it off here. Ticks are saved on this device. Check out in Tesco as
+        usual — nothing here ever touches your basket automatically.
       </p>
-    </form>
+      <p style="margin:.5rem 0 0">
+        <strong><span id="done-count">0</span> / {{ rows|length }}</strong> ticked off
+        &nbsp;·&nbsp;
+        <a class="btn secondary" href="/plan/shopping.csv">Download CSV</a>
+        <button class="secondary" type="button" onclick="copyList()">Copy list</button>
+        <button class="secondary" type="button" onclick="resetTicks()">Reset ticks</button>
+      </p>
+    </div>
+
+    <table id="shop-table">
+      <thead><tr><th></th><th>Item</th><th>Need</th><th></th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+          <tr data-key="{{ plan.id }}::{{ row.line.normalized_name }}">
+            <td><input type="checkbox" class="tick"></td>
+            <td class="item">{{ row.line.display_name }}</td>
+            <td class="muted">{{ row.line.quantity_display }}</td>
+            <td>
+              <a class="btn" href="{{ row.search_link }}" target="_blank" rel="noopener">Search &#8599;</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <script>
+      (function () {
+        const rows = Array.from(document.querySelectorAll('#shop-table tbody tr'));
+        const countEl = document.getElementById('done-count');
+        function refresh() {
+          let done = 0;
+          rows.forEach(function (tr) {
+            const on = localStorage.getItem(tr.dataset.key) === '1';
+            tr.querySelector('.tick').checked = on;
+            tr.style.opacity = on ? 0.45 : 1;
+            if (on) done++;
+          });
+          countEl.textContent = done;
+        }
+        rows.forEach(function (tr) {
+          tr.querySelector('.tick').addEventListener('change', function (e) {
+            localStorage.setItem(tr.dataset.key, e.target.checked ? '1' : '0');
+            refresh();
+          });
+        });
+        window.resetTicks = function () {
+          rows.forEach(function (tr) { localStorage.removeItem(tr.dataset.key); });
+          refresh();
+        };
+        window.copyList = function () {
+          const txt = rows.map(function (tr) {
+            return tr.querySelector('.item').textContent.trim() + ' — '
+                 + tr.children[2].textContent.trim();
+          }).join('\n');
+          navigator.clipboard.writeText(txt);
+        };
+        refresh();
+      })();
+    </script>
   {% endif %}
 {% endblock %}
