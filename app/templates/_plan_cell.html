@@ -1,0 +1,16 @@
+<div id="item-{{ item.id }}" class="meal-cell">
+  <a class="recipe" href="/recipes/{{ recipe.id }}">{{ recipe.title }}</a>
+  {% if recipe.calories %}<div class="muted cal">{{ recipe.calories|round|int }} kcal</div>{% endif %}
+  <div class="cell-controls">
+    <input type="number" min="1" value="{{ item.servings }}" name="servings"
+           title="servings"
+           hx-post="/plan/items/{{ item.id }}/servings"
+           hx-trigger="change" hx-swap="none">
+    <button class="secondary"
+            hx-post="/plan/items/{{ item.id }}/swap"
+            hx-target="#item-{{ item.id }}" hx-swap="outerHTML">Swap</button>
+    <button class="secondary" title="remove"
+            hx-post="/plan/items/{{ item.id }}/remove"
+            hx-target="#item-{{ item.id }}" hx-swap="outerHTML">&#10005;</button>
+  </div>
+</div>

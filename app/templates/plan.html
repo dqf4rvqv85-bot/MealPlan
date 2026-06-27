@@ -16,13 +16,28 @@
     </p>
   </form>
 
-  {% if plan and rows %}
+  {% if plan and grid %}
     <h2>{{ plan.name }}</h2>
-    <table>
-      <thead><tr><th>Recipe</th><th>Servings</th><th></th></tr></thead>
+    <table class="cal">
+      <thead>
+        <tr><th></th>{% for m in meals %}<th>{{ m }}</th>{% endfor %}</tr>
+      </thead>
       <tbody>
-        {% for item, recipe in rows %}
-          {% include "_plan_row.html" %}
+        {% for day in grid %}
+          <tr>
+            <th class="day">{{ day_labels[loop.index0] }}</th>
+            {% for cell in day %}
+              {% if cell %}
+                <td>
+                  {% with item = cell[0], recipe = cell[1] %}
+                    {% include "_plan_cell.html" %}
+                  {% endwith %}
+                </td>
+              {% else %}
+                <td class="empty"></td>
+              {% endif %}
+            {% endfor %}
+          </tr>
         {% endfor %}
       </tbody>
     </table>

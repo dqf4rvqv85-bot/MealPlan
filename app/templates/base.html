@@ -31,6 +31,21 @@
     input[type=number], input[type=text] { font: inherit; padding: .3rem; width: 5rem; }
     .pill { font-size: .75rem; background:#eef5ee; color: var(--accent);
             padding: .1rem .5rem; border-radius: 999px; }
+    /* weekly calendar grid */
+    table.cal { table-layout: fixed; }
+    table.cal th, table.cal td { border: 1px solid var(--line); vertical-align: top;
+            padding: .4rem .45rem; }
+    table.cal thead th { background:#f4f8f4; color: var(--accent); text-align:center;
+            font-size:.8rem; letter-spacing:.02em; text-transform:uppercase; }
+    table.cal th.day { width: 3rem; background:#f4f8f4; text-align:center;
+            vertical-align: middle; }
+    td.empty { background:#fafafa; }
+    .meal-cell { font-size:.85rem; }
+    .meal-cell a.recipe { font-weight:600; display:block; }
+    .meal-cell .cal { font-size:.72rem; margin-top:.1rem; }
+    .cell-controls { margin-top:.4rem; display:flex; gap:.25rem; align-items:center; }
+    .cell-controls input[type=number] { width:2.8rem; padding:.2rem; }
+    .cell-controls button { padding:.2rem .45rem; font-size:.72rem; }
   </style>
 </head>
 <body>

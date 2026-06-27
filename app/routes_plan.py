@@ -21,12 +21,25 @@ from app.templating import templates
 router = APIRouter()
 
 
+_DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+_MEALS = ["Breakfast", "Lunch", "Dinner"]
+
+
 @router.get("/plan", response_class=HTMLResponse)
 def plan_page(request: Request, session: Session = Depends(get_session)):
     plan = current_plan(session)
     rows = plan_items(session, plan) if plan else []
+    ndays = (max((it.slot for it, _ in rows), default=-1) // len(_MEALS)) + 1
+    grid = [[None] * len(_MEALS) for _ in range(ndays)]
+    for item, recipe in rows:
+        day, meal = divmod(item.slot, len(_MEALS))
+        if 0 <= day < ndays and 0 <= meal < len(_MEALS):
+            grid[day][meal] = (item, recipe)
+    day_labels = [_DAY_NAMES[i] if i < len(_DAY_NAMES) else f"Day {i + 1}"
+                  for i in range(ndays)]
     return templates.TemplateResponse(
-        request, "plan.html", {"plan": plan, "rows": rows}
+        request, "plan.html",
+        {"plan": plan, "grid": grid, "meals": _MEALS, "day_labels": day_labels},
     )
 
 
@@ -47,7 +60,7 @@ def swap(request: Request, item_id: int, session: Session = Depends(get_session)
         return HTMLResponse("", status_code=404)
     item, recipe = result
     return templates.TemplateResponse(
-        request, "_plan_row.html", {"item": item, "recipe": recipe}
+        request, "_plan_cell.html", {"item": item, "recipe": recipe}
     )
 
 
