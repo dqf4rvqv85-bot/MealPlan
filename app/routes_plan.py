@@ -31,11 +31,11 @@ def plan_page(request: Request, session: Session = Depends(get_session)):
 
 @router.post("/plan/generate")
 def generate(
-    num_meals: int = Form(7),
+    days: int = Form(7),
     servings: int = Form(2),
     session: Session = Depends(get_session),
 ):
-    generate_plan(session, num_meals=max(1, num_meals), servings=max(1, servings))
+    generate_plan(session, days=max(1, days), servings=max(1, servings))
     return RedirectResponse(url="/plan", status_code=303)
 
 

@@ -7,8 +7,17 @@ from sqlmodel import Session, select
 from app.models import MealPlan, MealPlanItem, Recipe
 
 
+DEFAULT_MEAL_TYPES = ("breakfast", "lunch", "dinner")
+
+
 def _all_recipe_ids(session: Session) -> list[int]:
     return list(session.exec(select(Recipe.id)).all())
+
+
+def _ids_for_meal_type(session: Session, meal_type: str) -> list[int]:
+    return list(
+        session.exec(select(Recipe.id).where(Recipe.meal_type == meal_type)).all()
+    )
 
 
 def current_plan(session: Session) -> MealPlan | None:
@@ -18,21 +27,39 @@ def current_plan(session: Session) -> MealPlan | None:
 
 
 def generate_plan(
-    session: Session, num_meals: int = 7, servings: int = 2, name: str = "Weekly plan"
+    session: Session,
+    days: int = 7,
+    servings: int = 2,
+    meal_types: tuple[str, ...] = DEFAULT_MEAL_TYPES,
+    name: str = "Weekly plan",
 ) -> MealPlan:
-    """Create a new plan of up to `num_meals` distinct recipes."""
-    ids = _all_recipe_ids(session)
-    chosen = random.sample(ids, min(num_meals, len(ids))) if ids else []
+    """Create a structured weekly plan: one recipe per meal type per day.
 
+    For each meal type we draw distinct recipes from that type's pool; if the
+    pool is smaller than `days` we allow repeats to fill the week. Slots are
+    ordered day-major (day 1 breakfast/lunch/dinner, day 2 ...) so the plan
+    table reads as a week.
+    """
     plan = MealPlan(name=name)
     session.add(plan)
     session.flush()
-    for slot, rid in enumerate(chosen):
-        session.add(
-            MealPlanItem(
-                meal_plan_id=plan.id, recipe_id=rid, slot=slot, servings=servings
+
+    for mi, meal_type in enumerate(meal_types):
+        pool = _ids_for_meal_type(session, meal_type)
+        random.shuffle(pool)
+        for day in range(days):
+            if not pool:
+                break  # no recipes of this meal type at all
+            rid = pool[day] if day < len(pool) else random.choice(pool)
+            session.add(
+                MealPlanItem(
+                    meal_plan_id=plan.id,
+                    recipe_id=rid,
+                    slot=day * len(meal_types) + mi,
+                    servings=servings,
+                )
             )
-        )
+
     session.commit()
     session.refresh(plan)
     return plan
