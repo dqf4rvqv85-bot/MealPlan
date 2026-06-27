@@ -1,63 +1,40 @@
-"""Playwright automation for tesco.com/groceries.
+"""Tesco automation by ATTACHING to a Chrome you launched yourself.
 
-This is the deliberately-fragile part of the app: it drives a real browser
-against a third-party site whose DOM changes without notice. Design choices to
-contain that:
-  * All site URLs and CSS selectors live in the constants block below — when
-    Tesco changes their markup, this is the only place to edit.
-  * Every interaction is wrapped so a miss degrades to "not found" rather than
-    crashing the request.
-  * Nothing here ever proceeds to checkout. The highest-impact action is adding
-    items to the basket, and only when explicitly requested (dry_run=False).
+Tesco groceries sits behind Akamai Bot Manager, which blocks Playwright-*launched*
+browsers (navigator.webdriver=true) with "Access Denied". The workaround that
+works: you launch Chrome yourself with a debug port and a real logged-in session,
+and we *attach* over CDP. To Akamai it's an ordinary human browser, so search and
+basket actions go through.
 
-Login note: Tesco login can present CAPTCHA / 2FA. Do a one-time interactive
-login with `save_login(headless=False)` to persist a browser session to
-settings.tesco_storage_state; subsequent search/add runs reuse it headlessly.
+Start Chrome once (after fully quitting Chrome), single line:
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir="$HOME/chrome-mealplanner"
+then sign in to tesco.com in that window.
+
+All site specifics (URL + selectors) live in the constants block — the only place
+to edit when Tesco changes their markup. Nothing here ever checks out.
 """
 
-import glob
-import os
 import re
-import time
 import urllib.parse
 from dataclasses import dataclass
-from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright
 
-from app.config import settings
-
-# --- Site constants (edit here when Tesco changes their markup) --------------
-GROCERIES = "https://www.tesco.com/groceries/en-GB"
-LOGIN_URL = "https://www.tesco.com/account/login/en-GB"
-
-# Candidate selectors tried in order; the first that matches wins.
-PRODUCT_TILE_SELECTORS = [
-    '[data-testid="product-tile"]',
-    'li[data-auto="product-tile"]',
-    'div.product-list--list-item',
-]
-PRODUCT_LINK_SELECTOR = 'a[href*="/products/"]'
-PRICE_SELECTORS = ['[data-auto="price-value"]', 'p.price-per-sellable-unit', '.price']
-_PRODUCT_ID_RE = re.compile(r"/products/(\d+)")
+# --- Connection + site constants (edit here when Tesco changes) --------------
+CDP_URL = "http://localhost:9222"  # Chrome launched with --remote-debugging-port
+SHOP = "https://www.tesco.com/shop/en-GB"
+# Product tiles are <li data-testid="<productId>"> containing a /products/ link;
+# each tile has its own "add" button (aria-label like "add 1 <product name>").
+PRODUCT_TILE = 'li[data-testid]:has(a[href*="/products/"])'
+PRODUCT_LINK = 'a[href*="/products/"]'
+ADD_BUTTON_RE = re.compile(r"^\s*add\b", re.I)
+PLUS_BUTTON_RE = re.compile(r"increase|add 1|\+", re.I)
+_PRICE_RE = re.compile(r"£\s?\d+(?:\.\d{2})?")
 # ---------------------------------------------------------------------------
 
 
 def search_url(term: str) -> str:
-    return f"{GROCERIES}/search?query={urllib.parse.quote(term)}"
-
-
-def chromium_executable() -> str | None:
-    """Locate a pre-installed Chromium when the bundled build is absent.
-
-    Returns None to let Playwright resolve its own browser (matched versions).
-    """
-    base = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
-    if base:
-        matches = sorted(glob.glob(os.path.join(base, "chromium-*/chrome-linux/chrome")))
-        if matches:
-            return matches[-1]
-    return None
+    return f"{SHOP}/search?query={urllib.parse.quote(term)}"
 
 
 @dataclass
@@ -79,11 +56,14 @@ class AddResult:
     detail: str
 
 
-class TescoSession:
-    """Context manager wrapping a Playwright browser + Tesco session."""
+class TescoConnectError(RuntimeError):
+    """Raised when no debug-enabled Chrome is reachable over CDP."""
 
-    def __init__(self, headless: bool = True):
-        self.headless = headless
+
+class TescoSession:
+    """Attaches to a user-launched Chrome over CDP. Never launches/closes it."""
+
+    def __init__(self, headless: bool = True):  # headless kept for call-compat
         self._pw = None
         self._browser = None
         self._ctx = None
@@ -91,163 +71,111 @@ class TescoSession:
 
     def __enter__(self) -> "TescoSession":
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(
-            headless=self.headless, executable_path=chromium_executable()
-        )
-        state = settings.resolve(settings.tesco_storage_state)
-        self._ctx = self._browser.new_context(
-            storage_state=str(state) if state.exists() else None
+        try:
+            self._browser = self._pw.chromium.connect_over_cdp(CDP_URL)
+        except Exception as exc:
+            self._pw.stop()
+            raise TescoConnectError(
+                f"Couldn't attach to Chrome at {CDP_URL}. Launch Chrome with "
+                "--remote-debugging-port=9222 (and a --user-data-dir), sign in to "
+                f"Tesco, then retry. ({exc})"
+            ) from exc
+        self._ctx = (
+            self._browser.contexts[0]
+            if self._browser.contexts
+            else self._browser.new_context()
         )
         self.page = self._ctx.new_page()
         return self
 
     def __exit__(self, *exc) -> None:
+        # Close only the tab we opened; leave the user's browser running.
         try:
-            if self._browser:
-                self._browser.close()
+            if self.page:
+                self.page.close()
         finally:
             if self._pw:
                 self._pw.stop()
 
-    def save_state(self) -> None:
-        state = settings.resolve(settings.tesco_storage_state)
-        self._ctx.storage_state(path=str(state))
-
-    def login(self) -> None:
-        """Fill the login form from settings and persist the session."""
-        if not (settings.tesco_email and settings.tesco_password):
-            raise RuntimeError("TESCO_EMAIL / TESCO_PASSWORD not set in .env")
-        self.page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        self.page.fill('input[type="email"], #email', settings.tesco_email)
-        self.page.fill('input[type="password"], #password', settings.tesco_password)
-        self.page.click('button[type="submit"]')
-        self.page.wait_for_load_state("networkidle")
-        self.save_state()
+    def _top_tile(self, term: str):
+        self.page.goto(search_url(term), wait_until="domcontentloaded", timeout=30000)
+        self.page.wait_for_timeout(2500)
+        tile = self.page.locator(PRODUCT_TILE).first
+        return tile if tile.count() > 0 else None
 
     def search(self, term: str) -> ProductMatch:
         try:
-            self.page.goto(search_url(term), wait_until="domcontentloaded")
-            tile = None
-            for sel in PRODUCT_TILE_SELECTORS:
-                loc = self.page.locator(sel).first
-                if loc.count() > 0:
-                    tile = loc
-                    break
+            tile = self._top_tile(term)
             if tile is None:
                 return ProductMatch(term=term, found=False)
-            link = tile.locator(PRODUCT_LINK_SELECTOR).first
-            href = link.get_attribute("href") or ""
-            url = href if href.startswith("http") else f"https://www.tesco.com{href}"
-            title = (link.inner_text() or "").strip() or None
-            m = _PRODUCT_ID_RE.search(url)
-            price = None
-            for psel in PRICE_SELECTORS:
-                p = tile.locator(psel).first
-                if p.count() > 0:
-                    price = (p.inner_text() or "").strip()
+            pid = tile.get_attribute("data-testid")
+            links = tile.locator(PRODUCT_LINK)
+            title = None
+            for i in range(min(links.count(), 4)):
+                txt = (links.nth(i).inner_text() or "").strip()
+                if txt:
+                    title = txt
                     break
+            href = links.first.get_attribute("href") or ""
+            url = href if href.startswith("http") else f"https://www.tesco.com{href}"
+            pm = _PRICE_RE.search(tile.inner_text() or "")
             return ProductMatch(
                 term=term,
                 found=True,
                 title=title,
                 url=url,
-                product_id=m.group(1) if m else None,
-                price=price,
+                product_id=pid,
+                price=pm.group(0) if pm else None,
             )
         except Exception:  # fragile site — degrade, don't crash
             return ProductMatch(term=term, found=False)
 
-    def add(self, product_url: str, quantity: int) -> bool:
-        """Add a product to the basket `quantity` times. Never checks out."""
-        self.page.goto(product_url, wait_until="domcontentloaded")
-        add_btn = self.page.get_by_role("button", name=re.compile("add", re.I)).first
-        if add_btn.count() == 0:
-            return False
-        for _ in range(max(1, quantity)):
+    def add_top_result(self, term: str, quantity: int) -> tuple[bool, str]:
+        """Add the top search result to the basket `quantity` times.
+
+        Adds from the search tile (whose 'add' button we know), then uses the
+        quantity stepper that appears for any extra units. Never checks out.
+        """
+        try:
+            tile = self._top_tile(term)
+            if tile is None:
+                return False, "no product found"
+            add_btn = tile.get_by_role("button", name=ADD_BUTTON_RE).first
+            if add_btn.count() == 0:
+                return False, "add button not found"
             add_btn.click()
-            self.page.wait_for_timeout(400)
-        return True
+            self.page.wait_for_timeout(1000)
+            for _ in range(max(0, quantity - 1)):
+                plus = tile.get_by_role("button", name=PLUS_BUTTON_RE).first
+                if plus.count() == 0:
+                    break
+                plus.click()
+                self.page.wait_for_timeout(700)
+            return True, f"added x{quantity}"
+        except Exception as exc:
+            return False, str(exc)
 
 
 def search_terms(terms: list[str], headless: bool = True) -> list[ProductMatch]:
-    results: list[ProductMatch] = []
-    with TescoSession(headless=headless) as s:
+    out: list[ProductMatch] = []
+    with TescoSession() as s:
         for t in terms:
-            results.append(s.search(t))
-    return results
+            out.append(s.search(t))
+    return out
 
 
 def add_to_basket(
     items: list[tuple[str, str, int]], dry_run: bool = True, headless: bool = True
 ) -> list[AddResult]:
-    """items = list of (term, product_url, quantity)."""
+    """items = list of (term, product_url, quantity); adds the top match per term."""
     if dry_run:
         return [
             AddResult(term=t, url=u, quantity=q, ok=True, detail="dry-run (not added)")
             for (t, u, q) in items
         ]
     out: list[AddResult] = []
-    with TescoSession(headless=headless) as s:
+    with TescoSession() as s:
         for term, url, qty in items:
-            try:
-                ok = s.add(url, qty)
-                out.append(
-                    AddResult(term, url, qty, ok, "added" if ok else "add button not found")
-                )
-            except Exception as exc:
-                out.append(AddResult(term, url, qty, False, str(exc)))
+            ok, detail = s.add_top_result(term, qty)
+            out.append(AddResult(term, url, qty, ok, detail))
     return out
-
-
-def _looks_logged_in(page: Page) -> bool:
-    """Heuristic: a 'sign out' affordance only appears once authenticated."""
-    try:
-        return page.get_by_text(re.compile(r"sign out|log out", re.I)).count() > 0
-    except Exception:
-        return False
-
-
-def save_login(headless: bool = False, timeout_s: int = 300) -> None:
-    """One-time interactive login helper.
-
-    Opens a visible browser at the Tesco login page, pre-fills the credentials
-    from .env if present, then *auto-detects* when you've finished signing in
-    (clearing any CAPTCHA / 2FA) and persists the session — no terminal input
-    needed, so it works even when stdin isn't interactive. Auto-detecting rather
-    than auto-submitting is what makes this survive Tesco's protections.
-    """
-    with TescoSession(headless=headless) as s:
-        s.page.goto(LOGIN_URL, wait_until="domcontentloaded")
-        if settings.tesco_email and settings.tesco_password:
-            for sel, val in (
-                ('input[type="email"], #email', settings.tesco_email),
-                ('input[type="password"], #password', settings.tesco_password),
-            ):
-                try:
-                    s.page.fill(sel, val, timeout=4000)
-                except Exception:
-                    pass  # field not present / different markup — fill manually
-        print("\nA browser window has opened at the Tesco sign-in page.")
-        print("Finish signing in there — complete any CAPTCHA or 2FA — until you")
-        print("reach your Tesco groceries homepage. I'll detect it automatically")
-        print(f"(waiting up to {timeout_s}s) and save the session.")
-
-        deadline = time.monotonic() + timeout_s
-        detected = False
-        try:
-            while time.monotonic() < deadline:
-                if _looks_logged_in(s.page):
-                    detected = True
-                    break
-                s.page.wait_for_timeout(2000)  # pumps the browser event loop
-        except Exception:
-            # browser closed or navigation in flight — fall through and save what we can
-            pass
-
-        s.save_state()
-        if detected:
-            print("✓ Detected a signed-in session — saved.")
-        else:
-            print("⚠ Didn't detect sign-in before timeout; saved the current session")
-            print("  anyway. If Tesco search later fails, just re-run this command.")
-        print(f"Session file: {settings.resolve(settings.tesco_storage_state)}")
