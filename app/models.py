@@ -11,6 +11,11 @@ class Recipe(SQLModel, table=True):
     meal_type: Optional[str] = None
     source_page_start: Optional[int] = None
     source_page_end: Optional[int] = None
+    # Per-serving nutrition from the recipe footer (for calorie-aware planning).
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    carbs_g: Optional[float] = None
     steps_json: str = "[]"  # JSON-encoded list[str]
     raw_json: str = "{}"  # full model output for re-parsing
 

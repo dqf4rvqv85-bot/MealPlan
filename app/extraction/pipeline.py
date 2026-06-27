@@ -46,12 +46,17 @@ class IngestSummary:
 def _persist_recipe(
     session: Session, parsed: ParsedRecipe, page_start: int, page_end: int
 ) -> None:
+    nut = parsed.nutrition
     recipe = Recipe(
         title=parsed.title.strip(),
         servings=parsed.servings,
         meal_type=parsed.meal_type,
         source_page_start=page_start + 1,  # store 1-based for humans
         source_page_end=page_end,
+        calories=nut.calories if nut else None,
+        protein_g=nut.protein_g if nut else None,
+        fat_g=nut.fat_g if nut else None,
+        carbs_g=nut.carbs_g if nut else None,
         steps_json=json.dumps(parsed.steps),
         raw_json=parsed.model_dump_json(),
     )

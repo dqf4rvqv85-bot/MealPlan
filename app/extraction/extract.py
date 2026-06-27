@@ -13,12 +13,28 @@ _EXTRACTION_PROMPT = (
     "Extract every COMPLETE recipe visible across the images.\n\n"
     "For each recipe return:\n"
     "- title: the recipe name as printed.\n"
-    "- servings: integer number of servings, or null if not stated.\n"
+    "- servings: the number of servings. In this book it is shown as a row of "
+    "small FILLED circles/dots immediately after the word 'Serves' — count the "
+    "filled dots and return that integer (e.g. three filled dots = 3, one "
+    "filled dot = 1). If a plain number is printed instead, use it. Only use "
+    "null if there is no dot indicator and no printed number at all.\n"
     "- meal_type: one of breakfast, lunch, dinner, dessert, snack, side, "
     "drink, sauce, or null if unclear.\n"
-    "- ingredients: each with raw_text (exactly as printed), name (the cleaned "
-    "ingredient, e.g. 'plain flour'), quantity (a number, or null), and unit "
-    "(e.g. 'g', 'ml', 'tbsp', 'tsp', 'clove', or null).\n"
+    "- nutrition: the per-serving values printed in the small footer line, e.g. "
+    "'Calories - 558, Protein - 22.8g, Fat - 80.9g, Carbs - 9.5g'. Return "
+    "calories, protein_g, fat_g and carbs_g as plain numbers (grams without the "
+    "'g' suffix). Use null for any value not shown.\n"
+    "- ingredients: each with:\n"
+    "    - raw_text: exactly as printed (keep quantities and notes).\n"
+    "    - name: the bare ingredient as you would add it to a supermarket "
+    "shopping list — singular, WITHOUT quantities, pack sizes, or preparation "
+    "words. Drop anything after a comma and any '(...)' notes. Examples: "
+    "'1 medjool date, pitted and diced' -> 'medjool dates'; "
+    "'1 cup mango (fresh or frozen), chopped' -> 'mango'; "
+    "'1 large pre-baked sweet potato (I used Hannah)' -> 'sweet potato'. "
+    "Keep it specific enough to buy (e.g. 'chickpea flour', not 'flour').\n"
+    "    - quantity: a number, or null.\n"
+    "    - unit: e.g. 'g', 'ml', 'tbsp', 'tsp', 'cup', 'clove', or null.\n"
     "- steps: the method as an ordered list of strings.\n"
     "- continues_past_batch: true ONLY if a recipe clearly begins on these "
     "pages but its method/ingredients continue beyond the LAST image shown.\n\n"
@@ -34,10 +50,18 @@ class ParsedIngredient(BaseModel):
     unit: Optional[str] = None
 
 
+class ParsedNutrition(BaseModel):
+    calories: Optional[float] = None
+    protein_g: Optional[float] = None
+    fat_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+
+
 class ParsedRecipe(BaseModel):
     title: str
     servings: Optional[int] = None
     meal_type: Optional[str] = None
+    nutrition: Optional[ParsedNutrition] = None
     ingredients: list[ParsedIngredient]
     steps: list[str]
     continues_past_batch: bool = False

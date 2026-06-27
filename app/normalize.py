@@ -9,10 +9,15 @@ _DESCRIPTORS = {
     "taste", "for", "garnish", "serving", "plus", "more", "a", "an", "of",
     "good", "quality", "warm", "cold", "hot", "dried", "frozen", "tinned",
     "canned", "whole", "halved", "quartered", "deseeded", "trimmed",
+    # prep/qualifier words seen in this book's ingredient names
+    "pre", "baked", "precooked", "prebaked", "pitted", "and", "mashed",
+    "softened", "melted", "drizzle", "splash", "pinch", "handful",
 }
 
 _TITLE_WS = re.compile(r"\s+")
 _NON_WORD = re.compile(r"[^a-z0-9\s]")
+# Everything from the first comma or '(' onward is prep detail, not the item.
+_AFTER_DETAIL = re.compile(r"[,(].*$", re.S)
 
 
 def normalize_title(title: str) -> str:
@@ -23,10 +28,12 @@ def normalize_title(title: str) -> str:
 def normalize_name(name: str) -> str:
     """Canonical ingredient key for aggregation and Tesco search.
 
-    Lowercases, strips punctuation and common descriptor words, collapses
-    whitespace. Intentionally simple and rule-based; refine later.
+    Drops prep detail after a comma or parenthesis, lowercases, strips
+    punctuation and common descriptor words, collapses whitespace.
+    Intentionally simple and rule-based; refine later.
     """
-    text = _NON_WORD.sub(" ", name.lower())
+    base = _AFTER_DETAIL.sub("", name.lower())
+    text = _NON_WORD.sub(" ", base)
     tokens = [
         t for t in text.split()
         if t and not t.isdigit() and t not in _DESCRIPTORS
