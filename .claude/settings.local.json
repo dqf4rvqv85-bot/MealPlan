@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv venv *)",
+      "Bash(uv pip *)",
+      "Bash(.venv/bin/python -c ' *)",
+      "Bash(.venv/bin/python -m compileall -q app scripts)"
+    ]
+  }
+}

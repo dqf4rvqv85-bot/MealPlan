@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Recipes — Mealplanner{% endblock %}
+{% block body %}
+  <h1>Recipe library</h1>
+  <p class="muted">{{ total }} recipes extracted from the cookbook.</p>
+  <form method="get" action="/recipes" style="margin:.6rem 0">
+    <input type="text" name="q" value="{{ q or '' }}" placeholder="search title…"
+           style="width:16rem">
+    <button type="submit">Search</button>
+    {% if q %}<a class="btn secondary" href="/recipes">Clear</a>{% endif %}
+  </form>
+
+  {% if not recipes %}
+    <div class="card muted">
+      No recipes yet. Run <code>python -m scripts.ingest</code> to extract them
+      from the PDF{% if not q %} (or <code>python -m scripts.seed_demo</code> for
+      sample data){% endif %}.
+    </div>
+  {% else %}
+    <div class="grid">
+      {% for r in recipes %}
+        <a class="recipe card" href="/recipes/{{ r.id }}">
+          <h3 style="margin:.2rem 0">{{ r.title }}</h3>
+          <div class="muted" style="font-size:.85rem">
+            {% if r.meal_type %}<span class="pill">{{ r.meal_type }}</span>{% endif %}
+            {% if r.servings %}serves {{ r.servings }}{% endif %}
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

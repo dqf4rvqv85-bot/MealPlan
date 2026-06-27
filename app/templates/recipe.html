@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ recipe.title }} — Mealplanner{% endblock %}
+{% block body %}
+  <p><a href="/recipes">&larr; Recipes</a></p>
+  <h1>{{ recipe.title }}</h1>
+  <p class="muted">
+    {% if recipe.meal_type %}<span class="pill">{{ recipe.meal_type }}</span>{% endif %}
+    {% if recipe.servings %}serves {{ recipe.servings }} &middot; {% endif %}
+    {% if recipe.source_page_start %}pages {{ recipe.source_page_start }}–{{ recipe.source_page_end }}{% endif %}
+  </p>
+
+  <h2>Ingredients</h2>
+  <ul>
+    {% for ing in ingredients %}
+      <li>{{ ing.raw_text }}</li>
+    {% endfor %}
+  </ul>
+
+  <h2>Method</h2>
+  <ol>
+    {% for step in steps %}
+      <li>{{ step }}</li>
+    {% endfor %}
+  </ol>
+{% endblock %}

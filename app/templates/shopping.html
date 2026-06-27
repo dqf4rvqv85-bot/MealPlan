@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Shopping list — Mealplanner{% endblock %}
+{% block body %}
+  <p><a href="/plan">&larr; Meal plan</a></p>
+  <h1>Shopping list</h1>
+  <p class="muted">{{ lines|length }} items, aggregated across {{ plan.name }}.</p>
+
+  {% if lines %}
+    <p>
+      <a class="btn secondary" href="/plan/shopping.csv">Download CSV</a>
+      <a class="btn" href="/tesco/review">Send to Tesco &rarr;</a>
+    </p>
+    <table>
+      <thead><tr><th>Item</th><th>Quantity</th><th>Used in</th></tr></thead>
+      <tbody>
+        {% for line in lines %}
+          <tr>
+            <td>{{ line.display_name }}</td>
+            <td>{{ line.quantity_display }}</td>
+            <td class="muted" style="font-size:.85rem">{{ line.used_in|join(', ') }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Nothing to buy — the current plan has no meals.</p>
+  {% endif %}
+{% endblock %}

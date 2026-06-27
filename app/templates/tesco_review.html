@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Send to Tesco — Mealplanner{% endblock %}
+{% block body %}
+  <p><a href="/plan/shopping">&larr; Shopping list</a></p>
+  <h1>Send to Tesco</h1>
+
+  {% if error %}
+    <div class="card" style="border-color:#c62828;color:#c62828">{{ error }}</div>
+  {% endif %}
+
+  {% if results %}
+    <div class="card">
+      <strong>{{ "Dry run — nothing was added." if was_dry_run else "Basket update results" }}</strong>
+      <table style="margin-top:.5rem">
+        <thead><tr><th>Item</th><th>Qty</th><th>Result</th></tr></thead>
+        <tbody>
+          {% for r in results %}
+            <tr><td>{{ r.term }}</td><td>{{ r.quantity }}</td>
+                <td>{{ "✓ " if r.ok else "✗ " }}{{ r.detail }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if not rows %}
+    <p class="muted">No shopping list yet — <a href="/plan">generate a meal plan</a> first.</p>
+  {% else %}
+    <p class="muted">
+      Product matches come from a Tesco search and are cached. Pack quantities are
+      your call — recipe amounts (g/ml/tbsp) don't map 1:1 to pack sizes, so the
+      default is 1 pack each; adjust below and confirm in the Tesco basket. This
+      never proceeds to checkout.
+    </p>
+
+    <form method="post" action="/tesco/search" style="margin:.6rem 0">
+      <button type="submit">Search Tesco for matches</button>
+      <span class="muted">(needs a logged-in session — see README)</span>
+    </form>
+
+    <form method="post" action="/tesco/add">
+      <table>
+        <thead>
+          <tr><th></th><th>Item</th><th>Needed</th><th>Tesco match</th><th>Packs</th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                {% if row.match and row.match.product_url %}
+                  <input type="checkbox" name="include" value="{{ row.i }}" checked>
+                  <input type="hidden" name="url_{{ row.i }}" value="{{ row.match.product_url }}">
+                  <input type="hidden" name="term_{{ row.i }}" value="{{ row.line.display_name }}">
+                {% endif %}
+              </td>
+              <td>{{ row.line.display_name }}</td>
+              <td class="muted">{{ row.line.quantity_display }}</td>
+              <td>
+                {% if row.match and row.match.product_url %}
+                  <a href="{{ row.match.product_url }}" target="_blank">{{ row.match.product_title or "product" }}</a>
+                  {% if row.match.pack_note %}<span class="muted">{{ row.match.pack_note }}</span>{% endif %}
+                {% else %}
+                  <a href="{{ row.search_link }}" target="_blank">search on Tesco</a>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.match and row.match.product_url %}
+                  <input type="number" name="qty_{{ row.i }}" min="1" value="1">
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p style="margin-top:1rem">
+        <label><input type="checkbox" name="dry_run" checked> Dry run (don't actually add)</label>
+        <button type="submit" style="margin-left:1rem">Add selected to basket</button>
+      </p>
+    </form>
+  {% endif %}
+{% endblock %}

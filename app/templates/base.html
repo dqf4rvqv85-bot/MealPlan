@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Mealplanner{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    :root { --fg:#222; --muted:#666; --line:#e2e2e2; --accent:#2e7d32; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; color: var(--fg); margin: 0;
+           line-height: 1.45; }
+    header { background: var(--accent); color: #fff; padding: .7rem 1rem; }
+    header a { color: #fff; text-decoration: none; margin-right: 1rem; }
+    header a:hover { text-decoration: underline; }
+    main { max-width: 980px; margin: 0 auto; padding: 1.2rem 1rem 3rem; }
+    h1 { margin-top: .3rem; }
+    .muted { color: var(--muted); }
+    .card { border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem;
+            margin: .6rem 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(240px,1fr));
+            gap: .8rem; }
+    a.recipe { text-decoration: none; color: var(--fg); }
+    a.recipe:hover h3 { color: var(--accent); }
+    button, .btn { font: inherit; padding: .45rem .8rem; border: 1px solid var(--accent);
+            background: var(--accent); color: #fff; border-radius: 6px; cursor: pointer;
+            text-decoration: none; display: inline-block; }
+    button.secondary, .btn.secondary { background: #fff; color: var(--accent); }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); }
+    input[type=number], input[type=text] { font: inherit; padding: .3rem; width: 5rem; }
+    .pill { font-size: .75rem; background:#eef5ee; color: var(--accent);
+            padding: .1rem .5rem; border-radius: 999px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/">Mealplanner</a>
+    <a href="/recipes">Recipes</a>
+    <a href="/plan">Meal plan</a>
+  </header>
+  <main>
+    {% block body %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Meal plan — Mealplanner{% endblock %}
+{% block body %}
+  <h1>Meal plan</h1>
+
+  <form method="post" action="/plan/generate" class="card">
+    <strong>Generate a new plan</strong>
+    <div style="margin-top:.5rem">
+      <label>Meals <input type="number" name="num_meals" min="1" value="7"></label>
+      <label style="margin-left:1rem">Servings each
+        <input type="number" name="servings" min="1" value="2"></label>
+      <button type="submit" style="margin-left:1rem">Generate</button>
+    </div>
+    <p class="muted" style="margin:.5rem 0 0">
+      Picks distinct recipes at random; swap any you don't fancy.
+    </p>
+  </form>
+
+  {% if plan and rows %}
+    <h2>{{ plan.name }}</h2>
+    <table>
+      <thead><tr><th>Recipe</th><th>Servings</th><th></th></tr></thead>
+      <tbody>
+        {% for item, recipe in rows %}
+          {% include "_plan_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+    <p style="margin-top:1rem">
+      <a class="btn" href="/plan/shopping">Shopping list &rarr;</a>
+    </p>
+  {% elif plan %}
+    <p class="muted">This plan has no meals. Generate one above.</p>
+  {% else %}
+    <p class="muted">No plan yet — generate one above.</p>
+  {% endif %}
+{% endblock %}

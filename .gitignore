@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+*.sqlite
+*.db
+.env
+*.egg-info/
+build/
+dist/
+# Playwright logged-in Tesco session
+tesco_state.json
+# Rasterized page images cache
+page_cache/

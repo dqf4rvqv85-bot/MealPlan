@@ -1,0 +1,26 @@
+[project]
+name = "mealplanner"
+version = "0.1.0"
+description = "Vegan recipe PDF -> weekly meal plan -> Tesco basket"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.12",
+    "sqlmodel>=0.0.22",
+    "pydantic-settings>=2.6",
+    "pymupdf>=1.24",
+    "anthropic>=0.40",
+    "playwright>=1.48",
+]
+
+[project.scripts]
+mealplanner-ingest = "scripts.ingest:main"
+
+[tool.setuptools.packages.find]
+include = ["app*", "scripts*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
