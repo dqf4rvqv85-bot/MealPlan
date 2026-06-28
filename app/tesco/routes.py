@@ -8,10 +8,18 @@ from app.models import ProductCandidate, TescoMatch
 from app.planning.generate import current_plan
 from app.planning.shopping import aggregate
 from app.tesco.basket import TescoConnectError, TescoSession, search_url
+from app.tesco.packs import packs_for
 from app.tesco.substitutions import to_search_term
 from app.templating import templates
 
 router = APIRouter()
+
+
+def _needs_by_name(lines) -> dict[str, list]:
+    out: dict[str, list] = {}
+    for line in lines:
+        out.setdefault(line.normalized_name, []).append((line.quantity, line.group_unit))
+    return out
 
 
 def _confirmed_matches(session: Session) -> dict[str, TescoMatch]:
@@ -32,6 +40,7 @@ def _buy_lines(session: Session):
 def _match_context(session: Session, request: Request, **extra) -> dict:
     plan, lines = _buy_lines(session)
     confirmed = _confirmed_matches(session)
+    needs = _needs_by_name(lines)
     rows = []
     for line in lines:
         cands = session.exec(
@@ -40,11 +49,17 @@ def _match_context(session: Session, request: Request, **extra) -> dict:
             .order_by(ProductCandidate.rank)
         ).all()
         term = to_search_term(line.normalized_name)
+        match = confirmed.get(line.normalized_name)
+        packs = (
+            packs_for(match.product_title or "", needs.get(line.normalized_name, []))
+            if match else 1
+        )
         rows.append(
             {
                 "line": line,
                 "candidates": cands,
-                "confirmed": confirmed.get(line.normalized_name),
+                "confirmed": match,
+                "packs": packs,
                 "search_term": term,
                 "search_link": search_url(term),
                 "substituted": term != line.normalized_name,
@@ -119,10 +134,16 @@ async def add(request: Request, session: Session = Depends(get_session)):
     dry_run = form.get("dry_run") == "on"
     _, lines = _buy_lines(session)
     names = {l.normalized_name for l in lines}
+    needs = _needs_by_name(lines)
     matches = [
         m
         for m in _confirmed_matches(session).values()
         if m.normalized_name in names and m.tesco_product_id
+    ]
+    # how many packs of each to add
+    plan_packs = [
+        (m, packs_for(m.product_title or "", needs.get(m.normalized_name, [])))
+        for m in matches
     ]
 
     error = None
@@ -132,17 +153,17 @@ async def add(request: Request, session: Session = Depends(get_session)):
     elif dry_run:
         results = [
             {"title": m.product_title or m.normalized_name, "ok": True,
-             "detail": "dry-run (not added)"}
-            for m in matches
+             "detail": f"dry-run — would add {packs} pack(s)"}
+            for m, packs in plan_packs
         ]
     else:
         def _run():
             out = []
             with TescoSession() as s:
-                for m in matches:
+                for m, packs in plan_packs:
                     ok, detail = s.add_chosen(
                         m.search_term or to_search_term(m.normalized_name),
-                        m.tesco_product_id, 1,
+                        m.tesco_product_id, packs,
                     )
                     out.append({"title": m.product_title or m.normalized_name,
                                 "ok": ok, "detail": detail})

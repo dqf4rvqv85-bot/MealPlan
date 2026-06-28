@@ -149,24 +149,36 @@ class TescoSession:
             return []
 
     def add_chosen(self, search_term: str, product_id: str, quantity: int) -> tuple[bool, str]:
-        """Add a specific confirmed product (by id) to the basket. Never checks out."""
+        """Add a specific confirmed product (by id) to the basket `quantity` packs.
+
+        The product tile re-renders after each click, so we re-locate it by id
+        between actions rather than reusing a stale handle. Never checks out.
+        """
+        sel = f'li[data-testid="{product_id}"]'
         try:
             self._goto_search(search_term)
-            tile = self.page.locator(f'li[data-testid="{product_id}"]').first
+            tile = self.page.locator(sel).first
             if tile.count() == 0:
                 return False, "product not on results page"
+            if "/login" in self.page.url:
+                return False, "logged out — sign in to Tesco in your debug Chrome"
             add_btn = tile.get_by_role("button", name=ADD_BUTTON_RE).first
             if add_btn.count() == 0:
                 return False, "add button not found"
             add_btn.click()
-            self.page.wait_for_timeout(1000)
+            self.page.wait_for_timeout(1200)
+            added = 1
             for _ in range(max(0, quantity - 1)):
-                plus = tile.get_by_role("button", name=PLUS_BUTTON_RE).first
+                t = self.page.locator(sel).first  # re-locate (tile re-rendered)
+                if t.count() == 0:
+                    break
+                plus = t.get_by_role("button", name=PLUS_BUTTON_RE).first
                 if plus.count() == 0:
                     break
                 plus.click()
-                self.page.wait_for_timeout(700)
-            return True, f"added x{quantity}"
+                self.page.wait_for_timeout(900)
+                added += 1
+            return True, f"added x{added}" + ("" if added == quantity else f" (wanted {quantity})")
         except Exception as exc:
             return False, str(exc)
 

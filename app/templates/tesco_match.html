@@ -54,7 +54,7 @@
             <strong>{{ row.line.display_name }}</strong>
             <span class="muted">— need {{ row.line.quantity_display }}</span>
             {% if row.substituted %}<span class="pill">as "{{ row.search_term }}"</span>{% endif %}
-            {% if row.confirmed %}<span class="pill">✓ confirmed</span>{% endif %}
+            {% if row.confirmed %}<span class="pill">✓ buy {{ row.packs }} pack{{ "s" if row.packs != 1 }}</span>{% endif %}
           </div>
           <div style="margin-top:.3rem">
             {% for cand in row.candidates %}
