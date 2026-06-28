@@ -66,10 +66,12 @@ def _match_context(session: Session, request: Request, **extra) -> dict:
             }
         )
     have_candidates = any(r["candidates"] for r in rows)
+    unmatched = [r for r in rows if not r["confirmed"]]
     return {
         "request": request,
         "plan": plan,
         "rows": rows,
+        "unmatched": unmatched,
         "n_confirmed": sum(1 for r in rows if r["confirmed"]),
         "have_candidates": have_candidates,
         **extra,
@@ -176,6 +178,7 @@ async def add(request: Request, session: Session = Depends(get_session)):
         except Exception as exc:  # pragma: no cover - live site failure
             error = f"Tesco basket update failed: {exc}"
 
+    add_failed = [r["title"] for r in results if not r["ok"]]
     ctx = _match_context(session, request, error=error, results=results,
-                         was_dry_run=dry_run)
+                         was_dry_run=dry_run, add_failed=add_failed)
     return templates.TemplateResponse(request, "tesco_match.html", ctx)

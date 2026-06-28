@@ -88,5 +88,35 @@
       <label><input type="checkbox" name="dry_run" checked> Dry run (don't actually add)</label>
       <button type="submit" style="margin-left:1rem">Add {{ n_confirmed }} to basket</button>
     </form>
+
+    {% set failed = add_failed | default([]) %}
+    {% if unmatched or failed %}
+      <h2 style="margin-top:1.6rem">
+        Buy elsewhere ({{ unmatched|length + failed|length }})
+      </h2>
+      <p class="muted">
+        Not going in your Tesco basket — no confirmed match{% if failed %} or
+        couldn't be added{% endif %}. Pick these up elsewhere. (Items leave this
+        list as you confirm a Tesco product for them above.)
+      </p>
+      <ul id="elsewhere-list">
+        {% for row in unmatched %}
+          <li>{{ row.line.display_name }} &mdash; {{ row.line.quantity_display }}
+            <a href="{{ row.search_link }}" target="_blank" rel="noopener">check Tesco &#8599;</a></li>
+        {% endfor %}
+        {% for title in failed %}
+          <li>{{ title }} <span class="muted">&mdash; couldn't add (out of stock / signed out?)</span></li>
+        {% endfor %}
+      </ul>
+      <button class="secondary" type="button" onclick="copyElsewhere()">Copy list</button>
+      <script>
+        function copyElsewhere() {
+          const items = [...document.querySelectorAll('#elsewhere-list li')]
+            .map(li => li.querySelector('a') ? li.firstChild.textContent.trim()
+                                             : li.textContent.trim());
+          navigator.clipboard.writeText(items.join('\n'));
+        }
+      </script>
+    {% endif %}
   {% endif %}
 {% endblock %}
